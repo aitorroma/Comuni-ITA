@@ -11,8 +11,8 @@ services:
     labels:
       - coolify.managed=true
       - coolify.proxy=enabled
-      - coolify.port=8000
-      - traefik.http.services.comuni-hc8444csgc488ogwk48w0ggs.loadbalancer.server.port=8000
+      - coolify.port=8080
+      - traefik.http.services.comuni-hc8444csgc488ogwk48w0ggs.loadbalancer.server.port=8080
     volumes:
       - ./data:/app/data # Mount the data directory for easy updates
     restart: unless-stopped
