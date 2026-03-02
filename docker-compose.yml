@@ -6,6 +6,18 @@ services:
       dockerfile: Dockerfile
     expose:
       - "8080:8080"
+    networks:
+      - coolify
+    labels:
+      - coolify.managed=true
+      - coolify.proxy=enabled
+      - coolify.port=3000
+      - traefik.http.services.nginx-rgckcogoo844ck888cows80w.loadbalancer.server.port=3000
     volumes:
       - ./data:/app/data # Mount the data directory for easy updates
     restart: unless-stopped
+    
+networks:
+  coolify:
+    external: true
+    name: coolify
