@@ -5,7 +5,7 @@
     },
     "network": {
         "ports": {
-            "expose": "8000"
+            "expose": "8080"
         }
     }
 }
