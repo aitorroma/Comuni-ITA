@@ -31,12 +31,13 @@ const getRegioni = (province: string[], query: CommonQuery): RegioniResponse => 
   const total = result.length;
 
   // Pagination
-  result = applyPagination(result, query.page, query.pagesize);
+  const pageSize = query.pagesize || query.limit;
+  result = applyPagination(result, query.page, pageSize);
 
   return {
     items: result,
     page: query.page || 1,
-    pagesize: query.pagesize || total,
+    pagesize: pageSize || total,
     total: total,
   };
 };

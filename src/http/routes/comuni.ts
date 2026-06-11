@@ -1,6 +1,6 @@
 import { FastifyInstance, RouteShorthandOptions } from "fastify";
 import { dataset } from "../../data/indexes";
-import { Comune, ComuneSchema } from "../../domain/types";
+import { Comune, ComuneSearchResult, ComuneSearchResultSchema } from "../../domain/types";
 import { normalizeString } from "../../domain/normalization";
 import { Static, Type } from "@sinclair/typebox";
 
@@ -20,7 +20,7 @@ const ComuniQuerySchema = Type.Object({
 });
 type ComuniQuery = Static<typeof ComuniQuerySchema>;
 
-const ComuniResponseSchema = CommonResponseSchema(ComuneSchema);
+const ComuniResponseSchema = CommonResponseSchema(ComuneSearchResultSchema);
 type ComuniResponse = Static<typeof ComuniResponseSchema>;
 
 const getComuniOpts: RouteShorthandOptions = {
@@ -29,7 +29,7 @@ const getComuniOpts: RouteShorthandOptions = {
     response: {
       200: {
         type: "array",
-        items: ComuneSchema,
+        items: ComuneSearchResultSchema,
       },
     },
   },
@@ -38,26 +38,26 @@ const getComuniOpts: RouteShorthandOptions = {
 // Define filter functions
 const filterByRegione = (regione: string) => {
   const sanitizedRegione = normalizeString(regione);
-  return (c: Comune) => {
+  return (c: ComuneSearchResult) => {
     return normalizeString(c.provincia.regione) === sanitizedRegione;
   };
 };
 
 const filterByProvincia = (provincia: string) => {
   const sanitizedProvincia = normalizeString(provincia);
-  return (c: Comune) => normalizeString(c.provincia.nome) === sanitizedProvincia;
+  return (c: ComuneSearchResult) => normalizeString(c.provincia.nome) === sanitizedProvincia || normalizeString(c.provincia.sigla) === sanitizedProvincia;
 };
 
-const applyFilters = (result: Comune[], query: ComuniQuery) => {
+const applyFilters = (result: ComuneSearchResult[], query: ComuniQuery) => {
   const { codice, codiceCatastale, prefisso, provincia, regione, cap, q } = query;
 
   // Filtro per codice
   if (codice) {
-    result = result.filter((c) => c.codice === codice);
+    result = result.filter((c) => ("codice" in c && c.codice === codice) || ("codiceComune" in c && c.codiceComune === codice));
   }
   // Filtro per codice catastale
   if (codiceCatastale) {
-    result = result.filter((c) => c.codiceCatastale === codiceCatastale);
+    result = result.filter((c) => "codiceCatastale" in c && c.codiceCatastale === codiceCatastale);
   }
   // Filtro per prefisso telefonico
   if (prefisso) {
@@ -78,23 +78,60 @@ const applyFilters = (result: Comune[], query: ComuniQuery) => {
   // Filtro per nome
   if (q) {
     const normalizedQ = normalizeString(q);
-    result = result.filter((c) => normalizeString(c.nome).includes(normalizedQ) || (c.nomeStraniero && normalizeString(c.nomeStraniero).includes(normalizedQ)));
+    result = result.filter(
+      (c) =>
+        normalizeString(c.nome).includes(normalizedQ) ||
+        ("nomeStraniero" in c && c.nomeStraniero && normalizeString(c.nomeStraniero).includes(normalizedQ)) ||
+        ("nomeAscii" in c && c.nomeAscii && normalizeString(c.nomeAscii).includes(normalizedQ)),
+    );
   }
 
   return result;
 };
 
-const getComuni = (comuni: Comune[], query: ComuniQuery): ComuniResponse => {
+const normalizedSearchNames = (item: ComuneSearchResult): string[] => {
+  return [
+    item.nome,
+    "nomeStraniero" in item ? item.nomeStraniero : null,
+    "nomeAscii" in item ? item.nomeAscii : null,
+  ]
+    .filter((value): value is string => typeof value === "string" && value.trim() !== "")
+    .map((value) => normalizeString(value));
+};
+
+const rankSearchResult = (item: ComuneSearchResult, q: string): number => {
+  const normalizedQ = normalizeString(q);
+  const names = normalizedSearchNames(item);
+
+  if (names.some((name) => name === normalizedQ)) return 0;
+  if (names.some((name) => name.startsWith(normalizedQ))) return 1;
+  if (names.some((name) => name.includes(normalizedQ))) return 2;
+
+  return 3;
+};
+
+const getComuni = (comuni: ComuneSearchResult[], query: ComuniQuery): ComuniResponse => {
   // Filtering
   let result: Partial<Comune>[] = applyFilters(comuni, query);
 
   // Sorting
-  result = applySorting(result, query.sort);
+  if (query.q) {
+    result = [...result].sort((a, b) => {
+      const rank = rankSearchResult(a as ComuneSearchResult, query.q as string) - rankSearchResult(b as ComuneSearchResult, query.q as string);
+
+      if (rank !== 0) return rank;
+
+      return ((a as ComuneSearchResult).nome || "").localeCompare(((b as ComuneSearchResult).nome || ""), "it", { sensitivity: "base" });
+    });
+  } else {
+    result = applySorting(result, query.sort);
+  }
 
   const total = result.length;
 
   // Pagination
-  result = applyPagination(result, query.page, query.pagesize);
+  const pageSize = query.pagesize || query.limit;
+  result = applyPagination(result, query.page, pageSize);
 
   // Projection (field selection)
   result = applyProjection(result, query.fields);
@@ -102,7 +139,7 @@ const getComuni = (comuni: Comune[], query: ComuniQuery): ComuniResponse => {
   return {
     items: result,
     page: query.page,
-    pagesize: query.pagesize || total,
+    pagesize: pageSize || total,
     total: total,
   };
 };
@@ -111,7 +148,7 @@ const getComuni = (comuni: Comune[], query: ComuniQuery): ComuniResponse => {
 export function comuniRoutes(fastify: FastifyInstance) {
   // GET /comuni
   fastify.get<{ Querystring: ComuniQuery; Reply: ComuniResponse }>("/comuni", getComuniOpts, (request, reply) => {
-    const comuni: Comune[] = Array.from(dataset.comuniByCodice.values());
+    const comuni: ComuneSearchResult[] = [...Array.from(dataset.comuniByCodice.values()), ...dataset.localita];
     reply.send(getComuni(comuni, request.query));
   });
 
@@ -126,7 +163,7 @@ export function comuniRoutes(fastify: FastifyInstance) {
     },
   };
   fastify.get<{ Params: { regione: string }; Querystring: ComuniQuery; Reply: ComuniResponse }>("/comuni/:regione", comuniByRegioneSchema, (request, reply) => {
-    const comuni: Comune[] = dataset.comuni.filter(filterByRegione(request.params.regione));
+    const comuni: ComuneSearchResult[] = [...dataset.comuni, ...dataset.localita].filter(filterByRegione(request.params.regione));
     reply.send(getComuni(comuni, request.query));
   });
 
@@ -141,7 +178,7 @@ export function comuniRoutes(fastify: FastifyInstance) {
     },
   };
   fastify.get<{ Params: { provincia: string }; Querystring: ComuniQuery; Reply: ComuniResponse }>("/comuni/provincia/:provincia", comuniByProvinciaSchema, (request, reply) => {
-    const comuni: Comune[] = dataset.comuni.filter(filterByProvincia(request.params.provincia));
+    const comuni: ComuneSearchResult[] = [...dataset.comuni, ...dataset.localita].filter(filterByProvincia(request.params.provincia));
     reply.send(getComuni(comuni, request.query));
   });
 }

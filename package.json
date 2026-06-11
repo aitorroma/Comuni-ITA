@@ -4,7 +4,9 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "build": "tsc --noEmit",
+    "import:localita": "node scripts/import-geonames-localita.mjs",
+    "test": "npm run build",
     "start": "ts-node src/http/server.ts"
   },
   "keywords": [],

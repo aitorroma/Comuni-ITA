@@ -63,7 +63,8 @@ const getProvince = (province: Provincia[], query: ProvinceQuery): ProvinceRespo
   const total = result.length;
 
   // Pagination
-  result = applyPagination(result, query.page, query.pagesize);
+  const pageSize = query.pagesize || query.limit;
+  result = applyPagination(result, query.page, pageSize);
 
   // Projection (field selection)
   result = applyProjection(result, query.fields);
@@ -71,7 +72,7 @@ const getProvince = (province: Provincia[], query: ProvinceQuery): ProvinceRespo
   return {
     items: result,
     page: query.page,
-    pagesize: query.pagesize || total,
+    pagesize: pageSize || total,
     total: total,
   };
 };

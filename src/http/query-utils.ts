@@ -4,6 +4,7 @@ export const CommonQuerySchema = {
   sort: Type.Optional(Type.String()),
   page: Type.Optional(Type.Integer({ minimum: 1, default: 1 })),
   pagesize: Type.Optional(Type.Integer({ minimum: 1 })),
+  limit: Type.Optional(Type.Integer({ minimum: 1 })),
   fields: Type.Optional(Type.String()),
   format: Type.Optional(Type.Union([Type.Literal("json"), Type.Literal("csv"), Type.Literal("xml")])),
 };
